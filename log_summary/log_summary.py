@@ -2,38 +2,38 @@ import re
 import pandas as pd
 import matplotlib.pyplot as plt
 import click
-from typing import NamedTuple, Pattern, Iterable
+from typing import Iterable, Optional, Sequence
 
 from .defaults import *
-
-class LogMessage(NamedTuple):
-    time: str
-    level: str
-    message: str
+from .exceptions import IncompatibleRegexPattern, NoMatchingLogs
+from .types import LogMessage
 
 
-class IncompatibleRegexPattern(Exception):
-    def __init__(self, pattern: Pattern):
-        self.fields = tuple(pattern.groupindex.keys())
+class MessageParser:
+    def __init__(self, pattern:str):
+        self._pattern = re.compile(pattern)
+        if self._pattern.groupindex.keys() != set(LogMessage._fields):
+            raise IncompatibleRegexPattern(self._pattern)
+    
+    def _parse_line(self, line: str) -> Optional[LogMessage]:
+        match = self._pattern.match(line)
+        if match:
+            return LogMessage(**match.groupdict())
 
-    def __str__(self) -> str:
-        return f"Expected regex patern with groups named {LogMessage._fields} " \
-            f"but instead received a pattern with groups {self.fields}"
 
-
-class NoMatchingLogs(Exception):
-    def __str__(self) -> str:
-        return "There were no logs found matching the regex pattern and log " \
-            "levels specified"
+    def parse(self, lines: Iterable[str]) -> Sequence[LogMessage]:
+        for line in lines:
+            message = self._parse_line(line)
+            if message:
+                yield message
 
 
 def make_report(logfile: Iterable[str], image_path: str, 
         pattern: str = DEFAULT_PATTERN, levels=DEFAULT_LEVELS) -> None:
-    pattern = re.compile(pattern)
-    if pattern.groupindex.keys() != set(LogMessage._fields):
-        raise IncompatibleRegexPattern(pattern)
-    messages = (pattern.match(line) for line in logfile)
-    messages = (message.groupdict() for message in messages if message and (message["level"] in levels))
+    
+    parser = MessageParser(pattern)
+    messages = parser.parse(logfile)
+    messages = (m for m in messages if m.level in levels)
 
     df = pd.DataFrame(messages, columns=LogMessage._fields)
     if df.size == 0:
