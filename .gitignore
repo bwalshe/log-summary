@@ -1,0 +1,7 @@
+*.pyc
+__pycache__
+*.egg-info
+*.png
+.vscode
+app_env
+clean_env
